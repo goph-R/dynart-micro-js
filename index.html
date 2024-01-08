@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="
+    sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>Your Page Title</title>
+    <style>
+        .template { display: none }
+        .action-list { list-style-type: none; margin: 0; padding: 0 }
+        .action-list li { padding: 0; margin: 0; display: inline-block }
+        .form .field { display: inline-block }
+        /*button span { display: none }*/
+    </style>
+</head>
+<body>
+
+<div class="app">
+
+    <div id="something_list_page" class="page">
+        <ul class="action-list">
+            <li><button id="something_action_add"><i class="fa-solid fa-plus"></i><span>Add</span></button></li>
+            <li><button id="something_action_delete" disabled><i class="fa-solid fa-trash"></i><span>Delete selected</span></button></li>
+        </ul>
+        <form id="something_filter_form" class="form">
+            <input type="hidden" name="limitOffset" value="0">
+            <input type="hidden" name="orderBy" value="id">
+            <input type="hidden" name="orderDir" value="desc">
+            <div class="row">
+                <div class="field">
+                    <select name="limitMax">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                    items per page
+                </div>
+                <div class="field">
+                    <input type="text" name="text" placeholder="Search...">
+                </div>
+                <div class="field">
+                    <button type="reset" style="display: none"><i class="fa-solid fa-x"></i></button>
+                </div>
+                <div class="field">
+                    <button type="submit"><i class="fa-solid fa-magnifying-glass"></i></button>
+                </div>
+            </div>
+        </form>
+        <div id="something_dynamic_list"></div>
+    </div>
+
+    <div id="something_form_page" class="page" style="display: none">
+        <form class="form">
+            <input id="something_form_input_id" type="hidden" name="id" value="">
+            <div id="something_form_field_name" class="field">
+                <label for="something_form_input_name">Name</label>
+                <div class="input">
+                    <input id="something_form_input_name" type="text" name="name">
+                </div>
+            </div>
+            <div class="field">
+                <label>Other things</label>
+                <div class="input">
+                    <ul class="action-list">
+                        <li><button id="other_thing_action_add"><i class="fa-solid fa-plus"></i><span>Add</span></button></li>
+                        <li><button id="other_thing_action_delete" disabled><i class="fa-solid fa-trash"></i><span>Delete selected</span></button></li>
+                    </ul>
+                    <div id="other_thing_dynamic_list"></div>
+                </div>
+            </div>
+            <div class="field">
+                <label></label>
+                <div class="input">
+                    <button id="something_form_back_button" type="button"><i class="fa-solid"></i><span>Back</span></button>
+                    <button type="submit"><i class="fa-solid"></i><span>Save</span></button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div id="something_view_page" class="page" style="display: none">
+        <table>
+            <tr>
+                <th>ID</th>
+                <td id="something_view_property_id"></td>
+            </tr>
+            <tr>
+                <th>Name</th>
+                <td id="something_view_property_name"></td>
+            </tr>
+        </table>
+        <button id="something_view_back_button" type="button"><i class="fa-solid"></i><span>Back</span></button>
+        <button id="something_view_edit_button" type="button"><i class="fa-solid"></i><span>Edit</span></button>
+    </div>
+
+    <div id="other_thing_form_page" class="page" style="display: none">
+        <form class="form">
+            <input id="other_thing_form_input_id" type="hidden" name="id" value="">
+            <div id="other_thing_form_field_name" class="field">
+                <label for="other_thing_form_input_name">Name</label>
+                <div class="input">
+                    <input id="other_thing_form_input_name" type="text" name="name">
+                </div>
+            </div>
+            <div class="field">
+                <label></label>
+                <div class="input">
+                    <button id="other_thing_form_back_button" type="button"><i class="fa-solid"></i><span>Back</span></button>
+                    <button type="submit"><i class="fa-solid"></i><span>Save</span></button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+<script src="dynamic-list.js"></script>
+<script>
+
+$(document).ready(function () {
+
+    const PageManager = function(selector, options) {
+        
+        this.setCurrent(selector) {
+            $('.page').hide()
+            $(selector).show()
+        }
+    }
+
+    const pageManager = new PageManager()
+
+    const defaultSomething = { // TODO: JSON from server
+        id: 0,
+        name: 'New something',
+        createdAt: "2008-08-28T00:00:10.001Z",
+        otherThings: []
+    }
+
+    const defaultOtherThing = { // TODO: JSON from server
+        id: 0,
+        name: 'New other thing'
+    }
+
+    // pages
+
+    function setCurrentPage(selector) {
+
+    }
+
+    setCurrentPage('#something_list_page')
+
+    // something list page
+
+    function otherThingsColumnView(item, property) {
+        const otherThingNames = []
+        item[property].forEach(function (otherThing) {
+            otherThingNames.push(otherThing.name)
+        })
+        return otherThingNames.join(', ')
+    }
+
+    $('#something_action_add').click(addSomething)
+    const somethingDynamicList = new DynamicList('#something_dynamic_list', {
+        groupActions: [
+            { $button: $('#something_action_delete'), action: deleteSomethings }
+        ],
+        $filterForm: $('#something_filter_form'),
+        columnViews: {
+            id: { label: 'ID',  align: 'right' },
+            name: { label: 'Name' },
+            otherThings: { label: 'Other things', view: otherThingsColumnView },
+            createdAt: { label: 'Created at', view: DynamicListColumnView.DateTime }
+        },
+        rowActions: [
+            { label: 'View', icon: 'fa-eye', action: viewSomething },
+            { label: 'Edit', icon: 'fa-pen', action: editSomething }
+        ],
+        findItems: findSomethings
+    })
+
+    function findSomethings(filters, resultCallback) {
+        // TODO: send find all request
+        console.log(filters)
+        const result = []
+        for (let i = filters.limitOffset + 1; i < filters.limitOffset + filters.limitMax + 1; i++) {
+            findSomething(i, function(r) { result.push(r) })
+        }
+        resultCallback({ items: result, total: 50 })
+    }
+
+    function findSomething(id, resultCallback) {
+        // TODO: send find by id request
+        resultCallback(defaultSomething)
+    }
+
+    function viewSomething(id) {
+        findSomething(id, function(result) {
+            $('#something_view_property_id').text(result.id)
+            $('#something_view_property_name').text(result.name)
+            setCurrentPage('#something_view_page')
+        })
+    }
+
+    function deleteSomethings(ids) {
+        if (confirm('Are you sure?')) {
+            console.log('Delete ' + ids)
+            somethingDynamicList.refresh()
+        }
+    }
+
+    // something form page
+
+    let currentSomething = $.extend(true, {}, defaultSomething)
+
+    $('#other_thing_action_add').click(addOtherThing)
+    const otherThingDynamicList = new DynamicList('#other_thing_dynamic_list', {
+        groupActions: [
+            { $button: $('#other_thing_action_delete'), action: deleteOtherThings }
+        ],
+        $filterForm: $('#other_thing_filter_form'),
+        columnViews: {
+            id: { label: 'ID',  align: 'right' },
+            name: { label: 'Name' },
+            createdAt: { label: 'Created at', view: DynamicListColumnView.DateTime }
+        },
+        findItems: findOtherThings
+    })
+
+    function addSomething() {
+        initSomethingForm(defaultSomething)
+    }
+
+    function editSomething(id) {
+        findSomething(id, function(result) {
+            initSomethingForm(result)
+        })
+    }
+
+    function initSomethingForm(data) {
+        currentSomething = $.extend(true, {}, data)
+        $('#something_form_input_id').attr('value', data.id)
+        $('#something_form_input_name').attr('value', data.name)
+        otherThingDynamicList.refresh()
+        setCurrentPage('#something_form_page')
+    }
+
+    function deleteOtherThings(ids) {
+        if (confirm('Are you sure?')) {
+            console.log('Delete ' + ids)
+            otherThingDynamicList.refresh()
+        }
+    }
+
+    function findOtherThings(filters, resultCallback) {
+        // TODO: send find other things request if currentSomething.id != 0
+        resultCallback({
+            items: currentSomething.otherThings,
+            total: currentSomething.otherThings.length
+        })
+    }
+
+    $('#something_form_page form').submit(function (event) {
+        event.preventDefault()
+        // TODO: send save request
+        somethingDynamicList.refresh()
+        setCurrentPage('#something_list_page')
+    })
+    $('#something_form_back_button').click(function() {
+        setCurrentPage('#something_list_page')
+    })
+
+    // something view page
+
+    $('#something_view_back_button').click(function() {
+        setCurrentPage('#something_list_page')
+    })
+    $('#something_view_edit_button').click(function() {
+        setCurrentPage('#something_list_page')
+    })
+
+    // other thing form page
+
+    let currentOtherThing = $.extend(true, {}, defaultOtherThing)
+
+    function addOtherThing() {
+        alert('yep');
+        $('#other_thing_form_input_id').attr('value', currentOtherThing.id)
+        $('#other_thing_form_input_name').attr('value', currentOtherThing.name)
+        setCurrentPage('#other_thing_form_page')
+    }
+
+    $('#other_thing_form_back_button').click(function() {
+        setCurrentPage('#something_form_page')
+    })
+
+})
+
+</script>
+
+</body>
+</html>
