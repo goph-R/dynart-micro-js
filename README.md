@@ -1,1 +1,1 @@
-# jquery-dynamic-list
+# Dynart Micro JS framework
