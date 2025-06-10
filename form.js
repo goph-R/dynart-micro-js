@@ -3,15 +3,27 @@ const Form = new function() {
     const that = this
 
     this.getValue = function($input) {
+        let v = null
         if (that.isCheckbox($input)) {
-            return $input.prop('checked')
+            v = $input.prop('checked')
         } else if (that.isRadio($input)) {
             const name = $input.attr('name') // radio inputs need name!
             const selected = $('input[type="radio"][name="' + name + '"]:checked')
-            return selected ? selected.val() : ''
+            v = selected ? selected.val() : ''
+        } else {
+            v = $input.val() ? $input.val() : ''
         }
-        const v = $input.val() ? $input.val() : ''
-        return $input.prop('data-no-trim') ? v : v.trim()
+        if (!$input.attr('data-no-convert') && (typeof(v) !== 'boolean')) { // isNaN(bool) == false
+            if (Number.isInteger(v)) {
+                v = parseInt(v)
+            } else if (!isNaN(v)) {
+                v = parseFloat(v)
+            }
+        }
+        if (typeof v === 'string') {
+            v = $input.attr('data-no-trim') ? v : v.trim()
+        }
+        return v
     }
 
     this.getTagName = function($input) {
@@ -56,12 +68,19 @@ const Form = new function() {
         } else if (that.isCheckbox($input)) {
             $input.prop('checked', value)
         } else {
-            $input.attr('value', value)
+            $input.attr('value', value === null ? '' : value)
         }
     }
 
-    this.bindTextInput = function($input, func) {
-        $input.change(func)
-        $input.keyup(func)
+    this.bindTextInput = function($input, func, events = 'change keyup') {
+        // because of ajax requests we don't want to send a request right after keyup
+        let timeout = null
+        const boundFunc = func.bind($input)
+        $input.on(events, function() {
+            if (timeout) {
+                clearTimeout(timeout)
+            }
+            timeout = setTimeout(boundFunc, 400)
+        })
     }
 }
