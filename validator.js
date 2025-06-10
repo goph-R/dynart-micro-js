@@ -1,12 +1,18 @@
+// allValidators: [array1, array2, array3, ...]
+// validator array: [$input, required, validator]
+// post validator array: [[function, $message]]
+
+// `validator` is optional in the validator array: you just need a required flag
+
 const Validator = function(allValidators) {
 
     const INPUT_INDEX = 0
     const REQUIRED_INDEX = 1
-    const VALIDATORS_START_INDEX = 2
+    const VALIDATOR_INDEX = 2
 
     const that = this
 
-    let changeData = true
+    let doChangeData = true
     let modified = false
 
     this.hideAllErrors = function() {
@@ -16,7 +22,7 @@ const Validator = function(allValidators) {
     }
 
     this.setDataOnChange = function(value) {
-        changeData = value
+        doChangeData = value
     }
 
     this.setDataModified = function(value) {
@@ -27,51 +33,75 @@ const Validator = function(allValidators) {
         return modified
     }
 
-    this.validate = function($input) {
+    this.validate = function($input, callback) {
         Validate.hideError($input)
-        const validators = findValidatorsForInput($input)
-        if (!validators) {
-            return true
+        if (Array.isArray($input)) { // post validator
+            return doValidate($input, $input[0], callback)
         }
-        let required = validators[REQUIRED_INDEX]
-        if (typeof required !== 'boolean') { // if not boolean: it depends on an input (associated)
+        const data = findDataForInput($input)
+        if (!data) {
+            return callback(true)
+        }
+        let required = data[REQUIRED_INDEX]
+        if (typeof required !== 'boolean') { // if not a boolean: it depends on an input (associated)
             required = Form.hasValue(required) // current input is required only if the other input has value
         }
         const hasValue = Form.hasValue($input)
         if (!required && !hasValue) {
-            return true
+            return callback(true)
         }
         if (required && !hasValue) {
             Validate.showError($input, 'Required')
-            return false
+            return callback(false)
         }
-        for (let i = VALIDATORS_START_INDEX; i < validators.length; i++) {
-            const v = validators[i]
-            const message = Array.isArray(v) ? v[0]($input, v[1]) : v($input)
+        doValidate($input, data[VALIDATOR_INDEX], callback)
+    }
+
+    function doValidate($input, validator, callback) {
+        // validator can be undefined
+        if (!validator) {
+            return callback(true)
+        }
+        const resultCallback = function(message) {
             if (message) {
                 Validate.showError($input, message)
-                return false
+                return callback(false)
             }
+            return callback(true)
         }
-        return true
+        Array.isArray(validator)
+            ? validator[0]($input, resultCallback, validator[1]) // call validator with options
+            : validator($input, resultCallback) // call validator with NO options
     }
 
-    this.validateAll = function() {
+    this.validateAll = function(callback) {
         let result = true
+        let validated = 0
         for (let i = 0; i < allValidators.length; i++) {
-            result &= that.validate(allValidators[i][INPUT_INDEX])
+            that.validate(allValidators[i][INPUT_INDEX], function(valid) {
+                result &= valid
+                validated++
+                if (validated === allValidators.length) {
+                    return callback(result)
+                }
+            })
         }
-        return result
     }
 
-    this.bindValue = function($input, object, property, value) {
-        if (changeData && that.validate($input)) {
-            that.hideAssociatedErrors($input)
-            object[property] = value !== undefined ? value : Form.getValue($input)
-            modified = true
-            return true
+    this.bindValue = function($input, object, property, callback, defaultValue) {
+        // callback and defaultValue is optional
+        if (!doChangeData) {
+            return callback ? callback(false) : null
         }
-        return false
+        that.validate($input, function(valid) {
+            if (!valid) {
+                return callback ? callback(false) : null
+            }
+            object[property] = defaultValue !== undefined ? defaultValue : Form.getValue($input)
+            that.hideAssociatedErrors($input)
+            modified = true
+            return callback ? callback(true) : null
+        })
     }
 
     this.hideAssociatedErrors = function($input) {
@@ -86,7 +116,10 @@ const Validator = function(allValidators) {
         }
     }
 
-    function findValidatorsForInput($input) {
+    function findDataForInput($input) {
+        if (Array.isArray($input)) {
+            return $input[0]
+        }
         for (let i = 0; i < allValidators.length; i++) {
             if (allValidators[i][INPUT_INDEX].attr('id') == $input.attr('id')) {
                 return allValidators[i]
@@ -95,7 +128,7 @@ const Validator = function(allValidators) {
     }
 }
 
-const Validate = new function() {
+const Validate = new function() { // static class
 
     const that = this
 
@@ -110,52 +143,77 @@ const Validate = new function() {
     }
 
     this.getErrorContainer = function($input) {
-        return $('#error_' + $input.attr('id'))
+        return Array.isArray($input)
+            ? $input[1] // post validator
+            : $('#error_' + $input.attr('id')) // pre validator
     }
 
-    this.isInteger = function($input) {
+    this.isInteger = function($input, callback) {
         const intRegex = /^[0-9]+$/
         const value = '' + Form.getValue($input)
-        return intRegex.test(value) ? '' : 'Not an integer'
+        return callback(intRegex.test(value) ? '' : 'Not an integer')
     }
 
-    this.isCurrency = function($input) {
+    this.isFloatWithTwoDecimals = function($input, callback) {
+        const floatRegex = /^\d+(\.\d{1,2})?$/
+        const value = '' + Form.getValue($input)
+        return callback(floatRegex.test(value) ? '' : 'Not a float with two decimals')
+    }
+
+    this.isCurrency = function($input, callback) {
         const currencyRegex = /^[A-Z]{3}$/
         const value = ('' + Form.getValue($input)).toUpperCase()
-        return currencyRegex.test(value) ? '' : 'Not a currency'
+        return callback(currencyRegex.test(value) ? '' : 'Not a currency')
     }
 
-    this.isIpV4 = function($input) {
+    this.isIpV4 = function($input, callback) {
         const value = '' + Form.getValue($input)
         const ipRegex = /^(localhost|(\d{1,3}\.){3}\d{1,3})$/
         if (!ipRegex.test(value)) {
-            return 'Not a valid IP address'
+            return callback('Not a valid IP address')
         }
         if (value.toLowerCase() === 'localhost') {
-            return '';
+            return callback('')
         }
         const parts = value.split('.')
         if (parts.length !== 4) {
-            return 'IP address should consist of four parts separated by periods'
+            return callback('IP address should consist of four parts separated by periods')
         }
         for (let i = 0; i < parts.length; i++) {
             const part = parseInt(parts[i])
             if (isNaN(part) || part < 0 || part > 255) {
-                return 'Each part should be a number between 0 and 255'
+                return callback('Each part should be a number between 0 and 255')
             }
         }
-        return ''
+        return callback('')
     }
 
-    this.isTime = function($input) {
+    this.isTime = function($input, callback) {
         const value = '' + Form.getValue($input)
         const timeRegex = /^(0?[0-9]|1[0-9]|2[0-3]):([0-5][0-9])$/;
         if (timeRegex.test(value)) {
             const [hours, minutes] = value.split(':').map(Number)
             if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
-                return ''
+                return callback('')
             }
         }
-        return 'Not a valid time'
+        return callback('Not a valid time')
+    }
+
+    this.isExist = function($input, callback, options) {
+        const url = Router.getUrlForAction(options.action)
+        const params = { value: Form.getValue($input), except: options.current.dbId }
+        let message = ''
+        $.get(url, params).done(function(result) {
+            if (result[RESPONSE_STATUS] === STATUS_OK) {
+                message = result.exists ? 'Exists' : ''
+            } else {
+                UI.showError('Error happened while fetching ' + url + ' with parameters: ' + JSON.stringify(params) + "\n" + result[RESPONSE_MESSAGE])
+            }
+        }).error(function(result) {
+            UI.showError('Error happened while fetching ' + url + ' with parameters: ' + JSON.stringify(params) + "\n" + result)
+        }).complete(function() {
+            callback(message)
+        })
     }
 }
