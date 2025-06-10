@@ -35,7 +35,7 @@ const ArrayUtil = new function() {
         const indices = []
         for (let i = 0; i < values.length; i++) {
             const index = that.findElementByFieldValue(source, fieldName, values[i], true)
-            if (index) {
+            if (index !== null) {
                 indices.push(index)
             }
         }
