@@ -1,36 +1,42 @@
+// TODO: .btn-danger everywhere? we should use the btn-default usually
+
 const DynamicListColumnView = {
     rowCheckboxCounter: 0,
-    text: function(item, property) {
+    text: function (item, property) {
         return item[property]
     },
-    nonBreakingText: function(item, property) {
+    nonBreakingText: function (item, property) {
         return item[property].replaceAll(' ', '&nbsp;')
     },
-    check: function(item, property) {
-        return item[property] ? '&check;' : ''
+    check: function (item, property) {
+        return item[property] ? '&check;' : '&times;'
     },
-    dateTime: function(item, property) {
+    dateTime: function (item, property) {
         const d = new Date(item[property])
         return d.toLocaleString()
     }
 }
 
-const DynamicList = function($container, options) {
+const DynamicList = function ($container, options) {
 
     const that = this
 
-    const defaultFormHtml = `
+    const orderByName = options.orderByName || 'sort'
+    const orderDirName = options.orderDirName || 'order'
+    const offsetName = options.offsetName || 'offset'
+    const maxName = options.maxName || 'max'
+
+    const formHtml = `
         <form style="display: none">
             <div>
-                <input type="hidden" name="order" value="">
-                <input type="hidden" name="sort" value="asc">
-                <input type="hidden" name="offset" value="0">
-                <input type="hidden" name="max" value="1000">
+                <input type="hidden" name="${orderDirName}" value="asc">
+                <input type="hidden" name="${orderByName}" value="">
+                <input type="hidden" name="${offsetName}" value="0">
+                <input type="hidden" name="${maxName}" value="1000">
             </div>
         </form>
     `
-
-    $container.html(options.$filterForm ? '' : defaultFormHtml + `
+    const html = options.html || `
         <div class="dynamic-list col-md-12 list grid-body table-responsive" style="padding: 0">
             <table class="table table-striped">
                 <thead>
@@ -51,26 +57,27 @@ const DynamicList = function($container, options) {
                 </tbody>
             </table>
             <div class="no-results">No results</div>
-            <div class="paging bottom row" style="margin-right:0;">
-                <div style="col-xs-6">
-                    <ul class="customPaginationRight" style="float:right; padding-right:0; text-align: right">
-                        <a href="#" class="prevLink">Previous</a>
-                        <a href="#" class="nextLink">Next</a>
-                    </ul>
-                </div>
-                <div class="col-xs-6 customPagination" style="float:left">
-                    Records 1-20 from 40
-                </div>
+            <div class="paging bottom row" style="margin: 0; padding: 1em">
+                <ul class="customPaginationRight" style="float: right; padding-right:0; text-align: right; margin-bottom: 0; margin-top: 3px; width: 100%"></ul>
+                <div class="customPagination" style="float: left"></div>
             </div>
         </div>
-    `)
+    `
+
+    $container.html(options.$filterForm ? html : formHtml + html)
 
     const idProperty = options.idProperty || 'id'
     const columnViews = options.columnViews || {}
     const groupActions = options.groupActions || null
     const rowActions = options.rowActions || []
-    const findItems = options.findItems || function(filters) { return { items: [], total: 0 } }
+    const findItems = options.findItems || function (filters) {
+        return {items: [], total: 0}
+    }
     const $filterForm = options.$filterForm ? options.$filterForm : $container.find('form')
+    const initialItems = options.initialItems || []
+    const initialItemsTotal = options.initialItemsTotal || initialItems.length
+    const orderDisabled = options.orderDisabled || []
+    const allOrderDisabled = options.allOrderDisabled || false
 
     const $noResults = $container.find('.no-results')
     const $table = $container.find('table')
@@ -80,36 +87,55 @@ const DynamicList = function($container, options) {
     const $headCheckbox = createHeaderCheckbox();
 
     const $paging = $container.find('.paging')
-    const $prevLink = $paging.find('.prevLink')
-    const $nextLink = $paging.find('.nextLink')
-    const $pages = $paging.find('.customPaginationRight')
+    const $pageLinks = $paging.find('.customPaginationRight')
     const $recordsLabel = $paging.find('.customPagination')
 
-    const $maxInput = $filterForm.find('input[name="max"]')
-    const $offsetInput = $filterForm.find('input[name="offset"]')
-    const $orderInput = $filterForm.find('input[name="order"]')
-    const $sortInput = $filterForm.find('input[name="sort"]')
+    const $maxInput = $filterForm.find('input[name="' + maxName + '"]')
+    const $offsetInput = $filterForm.find('input[name="' + offsetName + '"]')
+    const $orderDirInput = $filterForm.find('input[name="' + orderDirName + '"]')
+    const $orderByInput = $filterForm.find('input[name="' + orderByName + '"]')
 
+    let $pageInput = null
+
+    let initialized = false
+    let selectedIds = []
+    let totalItems = 0
     let $rowCheckboxes = []
     let refreshDoneCallback = null
 
-    this.refresh = function(doneCallback = null) {
-        refreshDoneCallback = doneCallback // TODO: better solution
+    this.refresh = function (doneCallback = null) {
+        refreshDoneCallback = doneCallback
+        if (!initialized && initialItems.length) {
+            initialized = true
+            return refreshCallback({items: initialItems, total: initialItemsTotal})
+        }
         const filters = {}
         const inputs = $filterForm.serializeArray()
-        inputs.forEach(function (input) {
+        for (let input of inputs) {
             filters[input.name] = input.value
-        })
+        }
         findItems(filters, refreshCallback)
     }
 
+    this.clearSelection = function () {
+        selectedIds = []
+    }
 
     createColumns();
     initGroupActions();
     initRowActions();
+    adjustOrderUi();
 
-    $prevLink.click(pageLinkClick)
-    $nextLink.click(pageLinkClick)
+    $filterForm.submit(function (event) {
+        event.preventDefault()
+        if ($pageInput && $pageInput.val()) {
+            $offsetInput.attr('value', (Math.floor($pageInput.val()) - 1) * getPageSize())
+        } else {
+            $offsetInput.attr('value', 0) // reset page to 0 on filter change
+        }
+        that.refresh()
+        return false
+    })
 
     this.refresh()
 
@@ -133,16 +159,12 @@ const DynamicList = function($container, options) {
     function createHeaderCheckbox() {
         const $headCheckbox = $container.find('th.checkbox-column input')
         $headCheckbox.change(function () {
-            if ($headCheckbox.prop('checked')) {
-                $rowCheckboxes.forEach(function ($cb) {
-                    $cb.prop('checked', true)
-                })
-            } else if (isAllChecked()) {
-                $rowCheckboxes.forEach(function ($cb) {
-                    $cb.prop('checked', false)
-                })
+            const isChecked = $headCheckbox.prop('checked')
+            for (let $cb of $rowCheckboxes) {
+                $cb.prop('checked', isChecked)
+                $cb.change()
             }
-            adjustGroupActionButtons()
+            adjustInfo()
         })
         return $headCheckbox;
     }
@@ -156,16 +178,26 @@ const DynamicList = function($container, options) {
     }
 
     function createColumns() {
-        // create columns
         let $prevHeader = $container.find('th.checkbox-column')
         let $prevCell = $tbody.find('td.checkbox-column')
-        Object.entries(columnViews).forEach(function (entry) {
-
+        for (let entry of Object.entries(columnViews)) {
             const [property, columnView] = entry
 
             const $header = $('<th>')
+            const content = DynamicListColumnView.nonBreakingText(columnView, 'label')
+
+            if (allOrderDisabled || orderDisabled.includes(property)) {
+                $header.html(content)
+            } else {
+                const $link = $('<a>')
+                $link.html(content)
+                $link.click(function () {
+                    changeOrderTo(property)
+                })
+                $header.append($link)
+            }
+
             $header.attr('data-property', property)
-            $header.html(DynamicListColumnView.nonBreakingText(columnView, 'label'))
             $header.insertAfter($prevHeader)
             $prevHeader = $header
 
@@ -176,8 +208,31 @@ const DynamicList = function($container, options) {
             }
             $cell.insertAfter($prevCell)
             $prevCell = $cell
+        }
+    }
 
+    function adjustOrderUi() {
+        $container.find('th').each(function (i, e) {
+            $(e).removeClass('asc')
+                .removeClass('desc')
+                .removeClass('sorted')
         })
+        const property = $orderByInput.val()
+        if (!property) {
+            return;
+        }
+        const $header = $container.find('th[data-property=' + property + ']')
+        $header.addClass('sorted')
+            .addClass($orderDirInput.val())
+    }
+
+    function changeOrderTo(property) {
+        const orderDir = $orderDirInput.val()
+        const orderBy = $orderByInput.val()
+        $orderByInput.val(property)
+        $orderDirInput.val(orderBy === property ? (orderDir === 'asc' ? 'desc' : 'asc') : 'asc')
+        adjustOrderUi()
+        that.refresh()
     }
 
     function createFromTemplate($templateElement) {
@@ -190,13 +245,12 @@ const DynamicList = function($container, options) {
     }
 
     function initGroupActions() {
-        // init group actions
         if (groupActions) {
-            groupActions.forEach(function (groupAction) {
+            for (let groupAction of groupActions) {
                 groupAction.$button.click(function () {
-                    groupAction.action(selectedIds())
+                    groupAction.action(selectedIds)
                 })
-            })
+            }
         } else {
             $container.find('.checkbox-column').each(function (i, e) {
                 $(e).hide()
@@ -209,6 +263,7 @@ const DynamicList = function($container, options) {
         adjustPaging(result)
         createContent(result);
         adjustGroupActionButtons()
+        adjustHeadCheckbox()
         if (typeof refreshDoneCallback === 'function') {
             refreshDoneCallback()
         }
@@ -227,17 +282,12 @@ const DynamicList = function($container, options) {
         if (result.items.length) {
             $noResults.hide()
             const pageSize = getPageSize()
-            const currentPage = getCurrentPage()
-            for (let i = 0; i < pageSize; i++) {
-                const index = currentPage * pageSize + i
-                if (index > result.items.length - 1) {
-                    break
-                }
+            const maxI = pageSize > result.items.length ? result.items.length : pageSize
+            for (let i = 0; i < maxI; i++) {
                 addItem(result.items[i], i)
             }
             $table.show()
         } else {
-            $table.hide()
             $noResults.show()
         }
     }
@@ -247,9 +297,9 @@ const DynamicList = function($container, options) {
         const rowCheckboxId = addRowCheckbox($row, item);
         $row.addClass(indexOnPage % 2 === 0 ? 'odd' : 'even')
         addRowActions($row, item);
-        Object.keys(columnViews).forEach(function (property) {
+        for (let property of Object.keys(columnViews)) {
             addCell(property, $row, rowCheckboxId, item);
-        })
+        }
         $tbody.append($row)
     }
 
@@ -257,31 +307,59 @@ const DynamicList = function($container, options) {
         const $rowCheckbox = $row.find('input[type=checkbox]')
         const rowCheckboxCounter = ++DynamicListColumnView.rowCheckboxCounter
         const rowCheckboxId = 'row_checkbox_' + rowCheckboxCounter + '_' + item[idProperty]
-        $rowCheckbox.attr('value', item[idProperty])
-        $rowCheckbox.change(adjustGroupActionButtons)
         $rowCheckbox.attr('id', rowCheckboxId)
+        $rowCheckbox.attr('value', item[idProperty])
+        let checked = false
+        for (let i = 0; i < selectedIds.length; i++) {
+            if (item[idProperty] == selectedIds[i]) { // intentionally no type check
+                checked = true
+                break
+            }
+        }
+        $rowCheckbox.prop('checked', checked)
+        $rowCheckbox.change(rowCheckboxChange)
         $rowCheckboxes.push($rowCheckbox)
         return rowCheckboxId;
     }
 
+    function rowCheckboxChange() {
+        changeSelection($(this))
+        adjustGroupActionButtons()
+        adjustHeadCheckbox()
+        adjustInfo()
+    }
+
+    function changeSelection($checkbox) {
+        if ($checkbox.prop('checked')) {
+            selectedIds.push($checkbox.attr('value'))
+        } else {
+            selectedIds = selectedIds.filter(function (id) {
+                return id !== $checkbox.attr('value')
+            })
+        }
+    }
+
     function addRowActions($row, item) {
         const $rowActions = $row.find('.row-actions')
-        rowActions.forEach(function (rowAction) {
+        for (let rowAction of rowActions) {
             const $rowAction = createFromTemplate($rowActionTemplate)
             const $button = $rowAction.find('a')
             $button.click(function () {
-                rowAction.action(item[idProperty])
+                rowAction.action(item[idProperty], item)
             })
             $button.addClass(rowAction.type)
             $button.attr('title', rowAction.title)
             $rowActions.append($rowAction)
-        })
+        }
     }
 
     function addCell(property, $row, rowCheckboxId, item) {
         const view = columnViews[property].view || DynamicListColumnView.text
         const viewOptions = columnViews[property].options || {}
         const $cell = $row.find('td[data-property="' + property + '"]')
+        if (columnViews[property].width) {
+            $cell.css('width', columnViews[property].width)
+        }
         const $label = $('<label>')
         $label.attr('for', rowCheckboxId)
         $label.html(view(item, property, viewOptions))
@@ -295,31 +373,21 @@ const DynamicList = function($container, options) {
         if (!$element) {
             return
         }
-        Object.entries(viewOptions).forEach(function (entry) {
+        for (let entry of Object.entries(viewOptions)) {
             const [k, v] = entry
             if (typeof v === 'function' && k.startsWith('on')) {
                 const lowerCaseEventWithoutOn = k.slice(2).toLowerCase()
                 $element.on(lowerCaseEventWithoutOn, v)
             }
-        })
+        }
     }
 
-    function selectedIds() {
-        const result = []
-        $rowCheckboxes.forEach(function ($checkbox) {
-            if ($checkbox.is(':checked')) {
-                result.push($checkbox.attr('value'))
-            }
-        })
-        return result
-    }
-
-    function isAllChecked() {
-        if (!$rowCheckboxes.length) {
-            return false
+    function isAllCheckedOnPage() {
+        if ($rowCheckboxes.length === 0) {
+            return false;
         }
         for (let i = 0; i < $rowCheckboxes.length; i++) {
-            if (!$rowCheckboxes[i].is(':checked')) {
+            if ($rowCheckboxes[i].prop('checked') === false) {
                 return false
             }
         }
@@ -327,85 +395,178 @@ const DynamicList = function($container, options) {
     }
 
     function adjustGroupActionButtons() {
-        let anyChecked = false
-        $rowCheckboxes.forEach(function ($checkbox) {
-            anyChecked |= $checkbox.is(':checked')
-        })
-        if (groupActions) {
-            groupActions.forEach(function (groupAction) {
-                const $b = groupAction.$button
-                $b.prop('disabled', !anyChecked)
-                $b.removeClass('btn-danger')
-                if (anyChecked) {
-                    $b.addClass('btn-danger')
-                }
-            })
+        let anyChecked = selectedIds.length > 0
+        if (!groupActions) {
+            return
         }
-        $headCheckbox.prop('checked', isAllChecked())
+        for (let groupAction of groupActions) {
+            const $b = groupAction.$button
+            $b.prop('disabled', !anyChecked)
+            $b.removeClass('btn-danger')
+            if (anyChecked) {
+                $b.addClass('btn-danger')
+            }
+        }
+    }
+
+    function adjustHeadCheckbox() {
+        $headCheckbox.prop('checked', isAllCheckedOnPage())
+    }
+
+    this.count = function () {
+        return totalItems
     }
 
     function adjustPaging(result) {
-
-        // adjust pages
-        const total = result.total ? result.total : result.items.length
         const pageSize = getPageSize()
-
+        totalItems = result.total ? result.total : result.items.length
+        let totalPages = Math.ceil(totalItems / pageSize)
+        if (isNaN(totalPages) || !isFinite(totalPages)) {
+            totalPages = 0
+            console.error('Total pages is not a number or not finite')
+        }
         let currentPage = getCurrentPage()
+        if (currentPage > totalPages - 1) {
+            currentPage = 0
+            setCurrentPage(currentPage)
+        }
+        $pageLinks.html('')
+        if (totalItems > pageSize) {
+            createPagingForm(totalPages)
+            createPageLinks(currentPage, totalPages);
+            $pageLinks.find('a').show()
+        }
+        adjustInfo();
+    }
 
-        if (total <= pageSize) {
-            // hide if no paging needed
-            $pages.hide()
-        } else {
-            // set total
-            let totalPages = Math.ceil(total / pageSize)
-            if (isNaN(totalPages) || !isFinite(totalPages)) {
-                totalPages = 0
-                console.error('Total pages is not a number or not finite')
+    function createPageLinks(currentPage, totalPages) {
+        const pagesRange = 5; // TODO: make it configurable
+
+        let showPrevDots = false;
+        let showNextDots = false;
+        let startPage = 1;
+        let endPage = totalPages;
+
+        if (totalPages > pagesRange) {
+            const halfRange = Math.floor(pagesRange / 2);
+            startPage = currentPage - halfRange;
+            let addition = startPage < 0 ? -startPage : 0;
+            if (startPage < 1) {
+                startPage = 1;
             }
-            if (currentPage > totalPages - 1) {
-                currentPage = totalPages - 1
-                setCurrentPage(currentPage)
-            }
-            // remove old page links
-            $pages.find('.step').remove()
-            $pages.find('.currentStep').remove()
-            // add new page links
-            for (let i = 0; i < totalPages; i++) {
-                const $pageLink = $('<a>')
-                $pageLink.attr('data-page', i)
-                if (i == currentPage) {
-                    $pageLink.addClass('currentStep')
-                } else {
-                    $pageLink.addClass('step')
+            endPage = currentPage + halfRange + addition;
+            if (endPage > totalPages) {
+                startPage -= endPage - totalPages;
+                if (startPage < 1) {
+                    startPage = 1;
                 }
-                $pageLink.html(i + 1)
-                $pageLink.click(pageLinkClick)
-                $prevLink.insertAfter($pageLink)
+                endPage = totalPages;
             }
-            // show paging
-            $pages.show()
+            showPrevDots = startPage > 1;
+            showNextDots = endPage < totalPages;
         }
 
-        // adjust prev-next links
-        if (currentPage === 0) {
-            $prevLink.hide()
-        } else {
-            $prevLink.attr('data-page', currentPage - 1)
-            $prevLink.show()
+        // create page links
+        if (currentPage != 0) {
+            const $link = $('<a class="prevLink">Previous</a>');
+            $link.attr('data-page', currentPage - 1);
+            $link.click(pageLinkClick);
+            $pageLinks.append($link);
         }
-        if (currentPage === total - 1) {
-            $nextLink.hide()
-        } else {
-            $nextLink.attr('data-page', currentPage + 1)
-            $nextLink.show()
+        $pageLinks.append(createPageLink(0));
+        if (showPrevDots) {
+            $pageLinks.append(createPageLink('...'));
         }
+        for (let i = startPage; i < endPage; i++) {
+            $pageLinks.append(createPageLink(i, currentPage));
+        }
+        if (showNextDots) {
+            $pageLinks.append(createPageLink('...', currentPage));
+        }
+        if (totalPages > 1 && endPage !== totalPages) {
+            $pageLinks.append(createPageLink(totalPages - 1, currentPage));
+        }
+        if (currentPage != totalPages - 1) {
+            const $link = $('<a class="nextLink">Next</a>');
+            $link.attr('data-page', currentPage + 1);
+            $link.click(pageLinkClick);
+            $pageLinks.append($link);
+        }
+    }
 
-        // adjust records label
+    function createPageLink(i) {
+        const $pageLink = $('<a>')
+        $pageLink.attr('data-page', i)
+        if (i === getCurrentPage()) {
+            $pageLink.addClass('currentStep')
+        } else {
+            $pageLink.addClass('step')
+        }
+        if (Number.isInteger(i)) {
+            $pageLink.html(i + 1)
+            $pageLink.click(pageLinkClick)
+        } else {
+            $pageLink.addClass('dots')
+            $pageLink.html(i)
+        }
+        return $pageLink
+    }
+
+    function createPagingForm(totalPages, currentPage) {
+        const $pagingForm = $('<form class="paging-form">')
+        $pageInput = $('<input type="number" min="1" name="page" placeholder="Pg#" style="width: 50px; float: right">')
+        $pageInput.attr('max', totalPages)
+        $pageInput.attr('value', getCurrentPage() + 1)
+        const $pageGoButton = $('<button class="btn btn-danger" style="float: right">Go</button>')
+        $pagingForm.append($pageInput)
+        $pagingForm.append($pageGoButton)
+        $pagingForm.submit(function (event) {
+            event.preventDefault()
+            $filterForm.submit()
+        })
+        $pageLinks.append($pagingForm)
+    }
+
+    function adjustInfo() {
+        const currentPage = getCurrentPage()
+        const pageSize = getPageSize()
         const pageStart = currentPage * pageSize + 1
         let pageEnd = currentPage * pageSize + pageSize
-        if (pageEnd > total) {
-            pageEnd = total
+        if (pageEnd > totalItems) {
+            pageEnd = totalItems
         }
-        $recordsLabel.html('Records ' + pageStart + '-' + pageEnd + ' from ' + total)
+        const $div = $('<div>')
+        const $spanRecords = $('<span class="records">')
+        const $spanSelection = $('<span class="selected-items">')
+        const recordsHtml = 'Records ' + pageStart + '-' + pageEnd + ' from ' + totalItems
+        $spanRecords.html(totalItems ? recordsHtml : '')
+        if (groupActions) {
+            const selectedHtml = '<br><span class="selected-items">Selected: ' + selectedIds.length + '</span>';
+            $spanSelection.html(totalItems ? selectedHtml : '')
+            $div.append($spanRecords)
+            $div.append($spanSelection)
+            if (selectedIds.length > 0) {
+                const $clearSelection = $('<a class="clear-selection">')
+                // unfortunately, we have to set the css properties here, TODO: why?
+                $clearSelection.css('float', 'none') // override css `div.list a.paging`
+                $clearSelection.css('background-color', 'transparent')
+                $clearSelection.css('border', 'none')
+                $clearSelection.css('color', '#a00')
+                $clearSelection.css('cursor', 'pointer')
+                $clearSelection.html('Clear selection')
+                $div.append($clearSelection)
+            }
+        } else if (totalItems > 0) {
+            $div.html($spanRecords)
+        }
+        $recordsLabel.html($div.html())
+        if (selectedIds.length > 0) {
+            $recordsLabel.find('.clear-selection').click(function () {
+                if (confirm('Clear selection?')) {
+                    selectedIds = []
+                    that.refresh()
+                }
+            })
+        }
     }
 }
